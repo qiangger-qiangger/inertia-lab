@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>赛博朋克惯性矩阵实验室 3D - 视角增强版</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Noto+Sans+SC:wght@400;700&display=swap');
+
+        :root {
+            --primary-color: #00ffcc;
+            --secondary-color: #ff0055;
+            --bg-color: #000;
+            --panel-bg: rgba(0, 20, 20, 0.9);
+            --text-main: #fff;
+            --text-dim: rgba(0, 255, 204, 0.8);
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: var(--bg-color);
+            font-family: 'Orbitron', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+            user-select: none;
+            color: var(--text-main);
+        }
+
+        #canvas-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
+            background: radial-gradient(circle at center, #111 0%, #000 100%);
+            /* 新增：鼠标交互提示 */
+            cursor: move; 
+        }
+
+        .scanlines {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(to bottom, rgba(255,255,255,0) 50%, rgba(0,0,0,0.1) 50%);
+            background-size: 100% 4px; pointer-events: none; z-index: 10; opacity: 0.7;
+        }
+
+        /* --- UI Components --- */
+        .hud {
+            position: absolute; color: var(--primary-color); z-index: 20; padding: 15px;
+            text-shadow: 0 0 5px var(--primary-color); pointer-events: auto;
+        }
+
+        .hud-tl { top: 40px; left: 0; border-bottom: 2px solid var(--primary-color); border-right: 2px solid var(--primary-color); border-bottom-right-radius: 10px; }
+        .hud-tr { top: 40px; right: 0; text-align: right; border-bottom: 2px solid var(--primary-color); border-left: 2px solid var(--primary-color); border-bottom-left-radius: 10px; max-width: 300px; }
+        .hud-bl { bottom: 0; left: 0; border-top: 2px solid var(--primary-color); border-right: 2px solid var(--primary-color); border-top-right-radius: 10px; max-width: 350px;}
+        .hud-br { bottom: 0; right: 0; text-align: right; border-top: 2px solid var(--primary-color); border-left: 2px solid var(--primary-color); border-top-left-radius: 10px; max-width: 300px;}
+        
+        .hud-bc { 
+            position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); 
+            width: 420px; height: 140px; z-index: 20; display: flex; gap: 15px;
+        }
+
+        .chart-box {
+            flex: 1; height: 100%;
+            background: linear-gradient(to top, rgba(0, 255, 204, 0.05), transparent);
+            border: 1px solid rgba(0, 255, 204, 0.3);
+            border-bottom: 2px solid var(--primary-color);
+            text-align: center; position: relative;
+            display: flex; flex-direction: column; justify-content: flex-start;
+        }
+        
+        .chart-box canvas {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 60%; z-index: 0; opacity: 0.6;
+        }
+
+        .digital-readout {
+            font-family: 'Orbitron', monospace; font-size: 1.8rem; font-weight: bold;
+            color: #fff; text-shadow: 0 0 10px var(--primary-color); z-index: 10; margin-top: 10px;
+        }
+        .digital-unit { font-size: 0.8rem; color: var(--text-dim); }
+        .chart-caption { font-size: 0.7rem; color: #aaa; margin-top: 2px; z-index: 10; }
+
+        .btn {
+            background: rgba(0, 255, 204, 0.1); border: 1px solid var(--primary-color);
+            color: var(--primary-color); padding: 5px 10px; cursor: pointer;
+            font-family: 'Orbitron', 'Noto Sans SC', sans-serif; 
+            font-size: 0.8rem; transition: all 0.3s; margin-top: 5px;
+        }
+        .btn:hover { background: var(--primary-color); color: #000; }
+        .btn-small { font-size: 0.7rem; padding: 2px 5px; }
+        
+        /* 新增：按钮组样式 */
+        .btn-group {
+            display: flex; gap: 5px; justify-content: flex-end; margin-top: 5px;
+        }
+
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.9); z-index: 1000;
+            display: flex; justify-content: center; align-items: center; flex-direction: column;
+        }
+        
+        .modal-content {
+            background: rgba(10, 20, 20, 0.95); border: 2px solid var(--primary-color);
+            padding: 40px; max-width: 600px; text-align: center;
+            box-shadow: 0 0 30px var(--primary-color); position: relative;
+            max-height: 80vh; overflow-y: auto; 
+        }
+
+        .close-btn { position: absolute; top: 10px; right: 15px; font-size: 24px; cursor: pointer; color: var(--secondary-color); }
+
+        #progress-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 30px;
+            background: #111; z-index: 50; display: flex; align-items: center; border-bottom: 1px solid #333;
+        }
+        .progress-step { flex: 1; text-align: center; font-size: 0.8rem; color: #555; }
+        .progress-step.active { color: var(--primary-color); font-weight: bold; text-shadow: 0 0 5px var(--primary-color); }
+        .progress-bar-fill { position: absolute; bottom: 0; left: 0; height: 3px; background: var(--primary-color); transition: width 0.5s; }
+
+        #task-panel {
+            position: absolute; top: 70px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8); border: 1px solid var(--secondary-color);
+            padding: 10px 20px; z-index: 30; text-align: center; display: none;
+            box-shadow: 0 0 15px rgba(255,0,85,0.3);
+        }
+        .task-success { border-color: #00ff00 !important; color: #00ff00 !important; box-shadow: 0 0 15px #00ff00 !important; }
+
+        #teacher-controls { display: none; margin-top: 10px; border-top: 1px dashed #555; padding-top: 10px; }
+        .control-group { margin-bottom: 5px; font-size: 0.8rem; display: flex; justify-content: space-between;}
+        input[type=range] { width: 60%; accent-color: var(--primary-color); }
+
+        h1 { margin: 0; font-size: 1.2rem; text-transform: uppercase; letter-spacing: 2px; }
+        h2 { font-size: 0.8rem; color: var(--primary-color); margin-top: 5px;}
+        .highlight { color: #fff; font-weight: bold; }
+        .warning { color: var(--secondary-color); }
+        .formula { font-size: 1.5rem; color: #ffff00; text-shadow: 0 0 8px #ffff00; margin-top: 10px; font-family: 'Courier New', monospace; font-weight: bold;}
+        
+        .input_video { display: none; }
+
+        /* --- 习题增强样式 --- */
+        .quiz-question-box {
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px dashed #333;
+        }
+        .quiz-option {
+            display: block; width: 100%; padding: 12px; margin: 8px 0;
+            background: #222; border: 1px solid #444; color: #fff; 
+            cursor: pointer; text-align: left; transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+        .quiz-option:hover:not([disabled]) { background: #333; border-color: var(--primary-color); }
+        
+        .quiz-option.correct { 
+            background: rgba(0,255,0,0.2); border-color: #00ff00; color: #aaffaa; 
+        }
+        .quiz-option.wrong { 
+            background: rgba(255,0,0,0.2); border-color: #ff0000; color: #ffaaaa; 
+        }
+        
+        .quiz-explanation {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0, 255, 204, 0.1);
+            border-left: 3px solid var(--primary-color);
+            font-size: 0.85rem;
+            color: #ddd;
+            text-align: left;
+            display: none; /* 默认隐藏 */
+            animation: fadeIn 0.5s;
+        }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* 应用场景 SVG 容器样式 */
+        .scenario-svg-container {
+            width: 300px;
+            height: 200px;
+            margin: 15px auto;
+            border: 2px solid var(--primary-color);
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.2);
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .scenario-svg-container svg {
+            width: 80%;
+            height: 80%;
+        }
+
+        body.high-contrast {
+            --primary-color: #fff; --secondary-color: #ff0; --bg-color: #000; --panel-bg: #000;
+        }
+        body.high-contrast .scanlines { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="progress-container">
+        <div class="progress-bar-fill" id="progress-fill" style="width: 33%;"></div>
+        <div class="progress-step active" id="step-1">1. 引入</div>
+        <div class="progress-step" id="step-2">2. 实验</div>
+        <div class="progress-step" id="step-3">3. 总结</div>
+    </div>
+
+    <!-- 欢迎弹窗 -->
+    <div id="intro-overlay" class="modal-overlay">
+        <div class="modal-content">
+            <h1 style="color: var(--primary-color);">微课目标：转动惯量</h1>
+            <p style="font-size: 1.1rem; color: #ddd; margin: 20px 0;">通过赛博朋克粒子模拟，直观感受质量分布对转动的影响。</p>
+            <ul style="text-align: left; color: #aaa; line-height: 1.8;">
+                <li>🖐️ <strong>左手 1-4 指：</strong> 切换几何结构 (棒/球/盘/立方)</li>
+                <li>🤏 <strong>右手张合：</strong> 控制物体大小 (R)</li>
+                <li>🖱️ <strong>鼠标/触控：</strong> 拖拽旋转视角，滚轮缩放</li>
+                <li>⚡ <strong>核心公式：</strong> L = IW</li>
+            </ul>
+            <button class="btn" onclick="startApp()" style="font-size: 1.2rem; padding: 10px 40px; margin-top:20px;">初始化系统</button>
+            <p style="font-size: 0.8rem; color: #666; margin-top: 15px;">需要摄像头权限进行交互</p>
+        </div>
+    </div>
+
+    <!-- 总结与测试弹窗 -->
+    <div id="summary-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content" style="width: 600px;">
+            <span class="close-btn" onclick="toggleSummary(false)">&times;</span>
+            <h2>知识小结 & 达标测试</h2>
+            <div style="text-align: left; margin-top: 10px; color:#ddd; font-size: 0.9rem;">
+                <p>1. <strong>转动惯量 (I)</strong>：描述物体转动的“惰性”，质量离轴越远，I 越大。</p>
+                <p>2. <strong>角动量守恒 (L=IW)</strong>：当系统不受外力矩时，I 增大，角速度 W 必减小。</p>
+            </div>
+            
+            <!-- 习题容器 -->
+            <div style="margin-top: 20px; border-top: 1px solid #555; padding-top: 10px; height: 350px; overflow-y: auto;">
+                <h3 style="color: var(--primary-color); margin-bottom: 15px;">⚡ 核心概念测试</h3>
+                <div id="quiz-container">
+                    <!-- 题目将通过 JS 动态生成 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 原理解析弹窗 -->
+    <div id="principle-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content" style="max-width: 700px; text-align: left;">
+            <span class="close-btn" onclick="document.getElementById('principle-modal').style.display='none'">&times;</span>
+            <h2 style="color: var(--primary-color); border-bottom: 1px solid #333; padding-bottom: 10px;">物理原理解析</h2>
+            <div id="principle-content" style="margin-top: 20px; color: #ddd;"></div>
+        </div>
+    </div>
+
+    <!-- 应用场景弹窗 -->
+    <div id="scenario-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-content" style="max-width: 700px; text-align: center;">
+            <span class="close-btn" onclick="document.getElementById('scenario-modal').style.display='none'">&times;</span>
+            <h2 style="color: var(--primary-color); border-bottom: 1px solid #333; padding-bottom: 10px;">实际应用场景</h2>
+            <div id="scenario-content" style="margin-top: 20px;">
+                <!-- 动态插入 SVG -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 任务面板 -->
+    <div id="task-panel">
+        <h3 style="margin:0; font-size: 1rem; color: #ffff00;">⚡ 挑战任务</h3>
+        <p id="task-desc" style="font-size: 0.9rem;">任务初始化中...</p>
+        <div id="task-feedback" style="font-size: 0.8rem; margin-top:5px; font-weight:bold;"></div>
+    </div>
+
+    <div class="scanlines"></div>
+
+    <div class="hud hud-tl">
+        <h1>INERTIA LAB</h1>
+        <p>状态: <span id="system-status" style="color:var(--primary-color)">ONLINE</span></p>
+        <button class="btn btn-small" onclick="document.body.classList.toggle('high-contrast')" style="position:absolute; top:10px; right:10px;">👁️</button>
+    </div>
+    
+    <div class="hud hud-tr">
+        <p>FPS: <span id="fps">60</span></p>
+        <p>HAND: <span id="hand-status" class="warning">SEARCHING...</span></p>
+        
+        <!-- 新增：视角控制区域 -->
+        <div style="margin-top: 10px; border-bottom: 1px dashed #555; padding-bottom: 10px;">
+            <p style="font-size: 0.7rem; color: #aaa; margin-bottom: 5px;">CAMERA VIEW</p>
+            <div class="btn-group">
+                <button class="btn btn-small" onclick="switchView('default')">重置</button>
+                <button class="btn btn-small" onclick="switchView('front')">正视</button>
+                <button class="btn btn-small" onclick="switchView('top')">俯视</button>
+                <button class="btn btn-small" onclick="switchView('side')">侧视</button>
+            </div>
+        </div>
+
+        <div style="margin-top: 10px;">
+            <label style="font-size: 0.8rem; color: #aaa; cursor:pointer;">
+                <input type="checkbox" id="teacher-mode-toggle" onchange="toggleTeacherMode()"> 教师控制模式
+            </label>
+            <div id="teacher-controls">
+                <div class="control-group">
+                    <span>半径 (Radius)</span>
+                    <input type="range" min="0.5" max="2.0" step="0.1" value="1.0" id="radius-slider">
+                </div>
+                <div class="control-group">
+                    <span>质量 (Mass)</span>
+                    <input type="range" min="1" max="5" step="0.5" value="1" id="mass-slider">
+                </div>
+                <button class="btn btn-small" style="width:100%" onclick="resetExperiment()">重置 (RESET)</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="hud hud-bl">
+        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom: 1px solid #333; padding-bottom:5px;">
+            <span>PHYSICS ENGINE</span>
+            <button class="btn btn-small" onclick="speakInsight()">🔊 讲解</button>
+        </div>
+        
+        <p id="mode-display" class="highlight">MODE: STANDBY</p>
+        <div id="insight-display" class="info-text">等待指令输入...</div>
+        
+        <!-- 按钮组 -->
+        <div style="display:flex; gap:5px; margin-top:5px;">
+            <button class="btn btn-small" style="flex:1;" onclick="toggleWhy()">原理解析</button>
+            <button class="btn btn-small" style="flex:1;" onclick="showScenario()">应用场景</button>
+        </div>
+
+        <p style="margin-top:10px; color:#ffff00">实际应用:</p>
+        <div id="app-display" class="info-text">--</div>
+    </div>
+
+    <div class="hud hud-br">
+        <div id="formula-display" class="formula">L = IW</div>
+        <p>右手交互: <span style="color:#fff">张开=变大 / 握拳=变小</span></p>
+        <p style="font-size: 0.7rem; color: #888;">观察半径(R)变化对速度的影响</p>
+        
+        <button class="btn" onclick="toggleSummary(true)" style="margin-top:15px; width:100%;">知识小结 & 测试</button>
+    </div>
+    
+    <div class="hud-bc">
+        <div class="chart-box">
+            <h2 class="tooltip">角速度 W<span class="tooltiptext">旋转速度，越快数值越大</span></h2>
+            <div id="velocity-val" class="digital-readout">0.0</div>
+            <div class="digital-unit">rad/s</div>
+            <canvas id="velocity-chart" width="190" height="70"></canvas>
+        </div>
+        <div class="chart-box">
+            <h2 class="tooltip">动能 (Ek)<span class="tooltiptext">Ek = 1/2 IW²</span></h2>
+            <div id="energy-val" class="digital-readout" style="color: #ff0055; text-shadow: 0 0 10px #ff0055;">0</div>
+            <div class="digital-unit">Joules</div>
+            <canvas id="energy-chart" width="190" height="70"></canvas>
+        </div>
+    </div>
+
+    <div id="canvas-container"></div>
+    <video class="input_video"></video>
+
+    <!-- 脚本库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- 新增：引入 OrbitControls 库 -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <script>
+        // --- 核心配置 ---
+        const CONFIG = {
+            particleCount: 20000, 
+            particleSize: 2.0, 
+            returnSpeed: 0.2, 
+            tiltAngle: 0.3, 
+            baseScale: 0.8, 
+            maxScale: 1.4,  
+            colors: {
+                rod: 0x00FFFF,   
+                sphere: 0xFFFF00, 
+                disc: 0xFF00FF,   
+                cube: 0x00FF88,   
+                text: 0xFFFFFF,
+                axis: 0xFF0055 
+            }
+        };
+
+        const KNOWLEDGE = {
+            rod: {
+                title: "细棒 (ROD)",
+                formula: "I = 1/12 ML²",
+                insight: "质量沿直线均匀分布。转动惯量取决于长度平方。",
+                why: "细棒绕中心旋转时，大部分质量距离转轴较远，因此比同质量的球体更难转动。",
+                app: "走钢丝的平衡杆",
+                svg: `<svg viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg"><style>.neon{fill:none;stroke:#00ffcc;stroke-width:2;filter:drop-shadow(0 0 2px #00ffcc);}</style><line x1="20" y1="120" x2="180" y2="120" class="neon"/><line x1="40" y1="60" x2="160" y2="60" class="neon"/><circle cx="100" cy="50" r="10" class="neon"/><line x1="100" y1="60" x2="100" y2="90" class="neon"/><line x1="100" y1="90" x2="80" y2="120" class="neon"/><line x1="100" y1="90" x2="120" y2="120" class="neon"/></svg>`,
+                derivation: `<div class="derivation-box"><p>1. 设棒长 L，质量 M，线密度 λ = M/L。</p><p>2. 取距离中心 x 处的微元 dx，其质量 dm = λ dx。</p><p>3. 转动惯量定义 I = ∫ r² dm。</p><p>4. 积分区间从 -L/2 到 L/2：<br>I = ∫ x² (λ dx) = λ [x³/3] (-L/2 → L/2)</p><p>5. 计算得：I = 1/12 ML²。</p></div>`
+            },
+            sphere: {
+                title: "实心球 (SPHERE)",
+                formula: "I = 2/5 MR²",
+                insight: "质量均匀分布在球体中。系数 0.4 较小，易于转动。",
+                why: "球体质量向中心集中，由于 r 较小的部分占比较大，总惯量较小。",
+                app: "行星自转、滚珠轴承",
+                svg: `<svg viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg"><style>.neon-y{fill:none;stroke:#ffff00;stroke-width:2;filter:drop-shadow(0 0 2px #ffff00);}</style><circle cx="100" cy="75" r="40" class="neon-y"/><ellipse cx="100" cy="75" rx="60" ry="15" class="neon-y" transform="rotate(-20 100 75)"/></svg>`,
+                derivation: `<div class="derivation-box"><p><strong>已知：</strong>半径R，质量M，密度 ρ = 3M/(4πR³)</p><p><strong>推导（薄片法）：</strong></p><p>1. 沿转轴（z轴）切取薄片：厚度 dz，半径 r = √(R² - z²)</p><p>2. 薄片转动惯量 dI = (1/2)r²dm</p><p>3. 薄片质量 dm = ρ·πr²dz</p><p>4. 积分：I = ∫ dI = (1/2)ρπ ∫ r⁴ dz (积分区间 -R 到 R)</p><p>5. 代入 r² = R² - z²，积分得 <strong>I = (2/5)MR²</strong></p></div>`
+            },
+            disc: {
+                title: "实心圆盘 (DISC)",
+                formula: "I = 1/2 MR²",
+                insight: "质量分布在平面圆盘上。系数 0.5。",
+                why: "相比球体，圆盘没有 Z 轴方向的收缩，质量平均分布更靠外，所以比球体难转。",
+                app: "飞轮、硬盘、陀螺仪",
+                svg: `<svg viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg"><style>.neon-p{fill:none;stroke:#ff00ff;stroke-width:2;filter:drop-shadow(0 0 2px #ff00ff);}</style><circle cx="100" cy="75" r="40" class="neon-p"/><circle cx="100" cy="75" r="10" class="neon-p"/><path d="M100 25 L110 35 M100 25 L90 35" class="neon-p"/><path d="M100 125 L90 115 M100 125 L110 115" class="neon-p"/></svg>`,
+                derivation: `<div class="derivation-box"><p>1. 设半径 R，质量 M，面密度 σ = M/(πR²)。</p><p>2. 取半径 r，宽度 dr 的圆环微元。</p><p>3. 微元面积 dA = 2πr dr，质量 dm = σ dA。</p><p>4. I = ∫ r² dm = ∫ r² (2πr σ dr) = 2πσ ∫ r³ dr</p><p>5. 积分区间 0 到 R，解得 I = 1/2 MR²。</p></div>`
+            },
+            cube: {
+                title: "立方体 (CUBE)",
+                formula: "I = 1/6 Ma²",
+                insight: "质量分布在正方体中。具有各向异性。",
+                why: "立方体的棱角部分质量离轴最远，对转动惯量贡献显著。",
+                app: "CubeSat 卫星",
+                svg: `<svg viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg"><style>.neon-g{fill:none;stroke:#00ff88;stroke-width:2;filter:drop-shadow(0 0 2px #00ff88);}</style><rect x="80" y="55" width="40" height="40" class="neon-g"/><line x1="80" y1="75" x2="40" y2="75" class="neon-g"/><rect x="30" y="55" width="10" height="40" class="neon-g"/><line x1="120" y1="75" x2="160" y2="75" class="neon-g"/><rect x="160" y="55" width="10" height="40" class="neon-g"/></svg>`,
+                derivation: `<div class="derivation-box"><p>1. 设边长 a，绕垂直于面的中心轴旋转。</p><p>2. 可视为无数个正方形薄片叠加。</p><p>3. 对于正方形薄片，I = 1/6 ma² (类似长方形板公式)。</p><p>4. 整合全体积，总 I = 1/6 Ma²。</p><p>5. 注意：若绕对角线旋转，公式会不同。</p></div>`
+            }
+        };
+
+        const QUIZ = [
+            { 
+                q: "1. 关于刚体对轴的转动惯量，下列说法中正确的是：", 
+                options: [
+                    "(A) 只取决于刚体的质量,与质量的空间分布和轴的位置无关", 
+                    "(B) 取决于刚体的质量和质量的空间分布，与轴的位置无关", 
+                    "(C) 取决于刚体的质量、质量的空间分布和轴的位置", 
+                    "(D) 只取决于转轴的位置，与刚体的质量和质量的空间分布无关"
+                ], 
+                ans: 2,
+                explanation: "<strong>解析：</strong> 选项 (C) 正确。转动惯量 $I = \\sum m_i r_i^2$。它不仅取决于刚体的总质量，还取决于质量在空间的分布情况（形状、大小、密度分布），以及转轴的位置（同一物体绕不同轴转动，I 通常不同）。"
+            },
+            { 
+                q: "2. 一水平圆盘可绕通过其中心的固定竖直轴转动，盘上站着一个人。把人和圆盘取作系统，当此人在盘上随意走动时，若忽略轴的摩擦，此系统：", 
+                options: [
+                    "(A) 动量守恒", 
+                    "(B) 机械能守恒", 
+                    "(C) 对转轴的角动量守恒", 
+                    "(D) 动量、机械能和角动量都守恒",
+                    "(E) 动量、机械能和角动量都不守恒"
+                ], 
+                ans: 2,
+                explanation: "<strong>解析：</strong> 选项 (C) 正确。系统受到的外力（重力、轴的支持力）对转轴的力矩为零（忽略摩擦），因此系统对转轴的角动量守恒。人走动时属于内力做功（化学能转动能），机械能不守恒；轴对系统有水平约束力，系统动量不守恒。"
+            },
+            { 
+                q: "3. 人造地球卫星，绕地球作椭圆轨道运动，地球在椭圆的一个焦点上，则卫星的：", 
+                options: [
+                    "(A) 动量不守恒，动能守恒", 
+                    "(B) 动量守恒，动能不守恒", 
+                    "(C) 对地心的角动量守恒，动能不守恒", 
+                    "(D) 对地心的角动量不守恒，动能守恒"
+                ], 
+                ans: 2,
+                explanation: "<strong>解析：</strong> 选项 (C) 正确。卫星只受万有引力作用，该力始终指向地心，力臂为零，有力无力矩，故对地心的角动量守恒。在椭圆轨道运动中，卫星距离地心的距离 r 在变化，引力势能变化，由机械能守恒可知，动能必然变化（近地点速度最大，远地点最小）。"
+            }
+        ];
+
+        let scene, camera, renderer, particles, particleGeo, positions, colors, baseTargetPositions;
+        let axisMesh, controls; // 新增：控制器变量
+        let clock = new THREE.Clock();
+        let time = 0;
+        
+        let currentScale = CONFIG.baseScale;
+        let targetScale = CONFIG.baseScale;
+        let shapeRotation = 0.0;
+        let currentRotSpeed = 0.02;
+        let currentInertiaFactor = 1.0;
+        let massFactor = 1.0; 
+
+        let velocityHistory = new Array(60).fill(0);
+        let energyHistory = new Array(60).fill(0);
+        const vChartCtx = document.getElementById('velocity-chart').getContext('2d');
+        const eChartCtx = document.getElementById('energy-chart').getContext('2d');
+
+        let currentShapeType = 'text';
+        let baseColor = new THREE.Color(CONFIG.colors.text);
+        let teacherMode = false;
+        let appStarted = false;
+        let currentTask = 0;
+
+        const els = {
+            handStatus: document.getElementById('hand-status'),
+            formula: document.getElementById('formula-display'),
+            mode: document.getElementById('mode-display'),
+            insight: document.getElementById('insight-display'),
+            app: document.getElementById('app-display'),
+            taskPanel: document.getElementById('task-panel'),
+            taskDesc: document.getElementById('task-desc'),
+            taskFeedback: document.getElementById('task-feedback'),
+            intro: document.getElementById('intro-overlay'),
+            radiusSlider: document.getElementById('radius-slider'),
+            massSlider: document.getElementById('mass-slider'),
+            progressFill: document.getElementById('progress-fill'),
+            velVal: document.getElementById('velocity-val'),
+            engVal: document.getElementById('energy-val')
+        };
+
+        const textCanvas = document.createElement('canvas');
+        const textCtx = textCanvas.getContext('2d');
+        textCanvas.width = 1000; textCanvas.height = 1000;
+
+        function startApp() {
+            els.intro.style.display = 'none';
+            appStarted = true;
+            updateProgress(2);
+            startTask(0);
+            updateTargetShape('text', 'SYSTEM');
+        }
+
+        function initThree() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.002);
+
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 130;
+
+            renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            // --- 核心修改：初始化 OrbitControls ---
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // 开启阻尼滑动效果
+            controls.dampingFactor = 0.05;
+            controls.enableZoom = true;
+            controls.autoRotate = false;
+            
+            createParticles();
+            createAxis(); 
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }, false);
+        }
+
+        // --- 核心修改：视角切换函数 ---
+        function switchView(view) {
+            if (!controls) return;
+            controls.reset(); // 重置目标点到原点
+            
+            const r = 130;
+            if (view === 'front') {
+                camera.position.set(0, 0, r);
+            } else if (view === 'top') {
+                camera.position.set(0, r, 0);
+            } else if (view === 'side') {
+                camera.position.set(r, 0, 0);
+            } else {
+                camera.position.set(0, 0, r);
+            }
+            camera.lookAt(0, 0, 0);
+        }
+
+        function createAxis() {
+            const geometry = new THREE.CylinderGeometry(0.2, 0.2, 600, 8); 
+            const material = new THREE.MeshBasicMaterial({ 
+                color: CONFIG.colors.axis, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending
+            });
+            axisMesh = new THREE.Mesh(geometry, material);
+            axisMesh.rotation.x = CONFIG.tiltAngle;
+            scene.add(axisMesh);
+        }
+
+        function createParticles() {
+            particleGeo = new THREE.BufferGeometry();
+            positions = new Float32Array(CONFIG.particleCount * 3);
+            baseTargetPositions = new Float32Array(CONFIG.particleCount * 3); 
+            colors = new Float32Array(CONFIG.particleCount * 3);
+
+            const color = new THREE.Color(CONFIG.colors.text);
+            baseColor = color; 
+
+            for (let i = 0; i < CONFIG.particleCount; i++) {
+                const x = (Math.random() - 0.5) * 200;
+                const y = (Math.random() - 0.5) * 200;
+                const z = (Math.random() - 0.5) * 200;
+                positions[i*3] = x; positions[i*3+1] = y; positions[i*3+2] = z;
+                baseTargetPositions[i*3] = x; baseTargetPositions[i*3+1] = y; baseTargetPositions[i*3+2] = z;
+                colors[i*3] = color.r; colors[i*3+1] = color.g; colors[i*3+2] = color.b;
+            }
+
+            particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particleGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = 32; canvas.height = 32;
+            const ctx = canvas.getContext('2d');
+            const grd = ctx.createRadialGradient(16,16,0,16,16,16);
+            grd.addColorStop(0, 'rgba(255,255,255,1)'); 
+            grd.addColorStop(0.4, 'rgba(255,255,255,0.5)'); 
+            grd.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = grd; ctx.fillRect(0,0,32,32);
+            const tex = new THREE.Texture(canvas); tex.needsUpdate = true;
+
+            const material = new THREE.PointsMaterial({
+                size: CONFIG.particleSize, map: tex, vertexColors: true,
+                blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.9
+            });
+
+            particles = new THREE.Points(particleGeo, material);
+            scene.add(particles);
+            updateTargetShape('text', "INIT...");
+        }
+
+        function updateTargetShape(type, param) {
+            currentShapeType = type;
+            let points = [];
+            let colorHex = CONFIG.colors.rod;
+
+            if (type === 'text') {
+                points = getTextPoints(param || "SYSTEM");
+                colorHex = CONFIG.colors.text;
+            } else if (type === 'rod') {
+                points = getRodPoints(100, 6); 
+                colorHex = CONFIG.colors.rod;
+            } else if (type === 'sphere') {
+                points = getSpherePoints(45);
+                colorHex = CONFIG.colors.sphere;
+            } else if (type === 'disc') {
+                points = getCylinderPoints(45, 8);
+                colorHex = CONFIG.colors.disc;
+            } else if (type === 'cube') {
+                points = getCubePoints(60);
+                colorHex = CONFIG.colors.cube;
+            }
+
+            const col = new THREE.Color(colorHex);
+            baseColor = col;
+            
+            for (let i = 0; i < CONFIG.particleCount; i++) {
+                const p = points[i % points.length];
+                baseTargetPositions[i*3] = p.x * 1.5;
+                baseTargetPositions[i*3+1] = p.y * 1.5;
+                baseTargetPositions[i*3+2] = p.z * 1.5;
+                colors[i*3] = col.r; colors[i*3+1] = col.g; colors[i*3+2] = col.b;
+            }
+            particleGeo.attributes.color.needsUpdate = true;
+        }
+
+        function getTextPoints(text) {
+            textCtx.clearRect(0, 0, 1000, 1000);
+            textCtx.font = "bold 100px 'Orbitron', 'Noto Sans SC', 'Microsoft YaHei', sans-serif";
+            textCtx.fillStyle = "white";
+            textCtx.textAlign = "center";
+            textCtx.textBaseline = "middle";
+            textCtx.fillText(text, 500, 500);
+            const data = textCtx.getImageData(0, 0, 1000, 1000).data;
+            const points = [];
+            const step = 4;
+            for (let y = 0; y < 1000; y += step) {
+                for (let x = 0; x < 1000; x += step) {
+                    if (data[(y * 1000 + x) * 4] > 128) {
+                        points.push({x: (x - 500) * 0.5, y: -(y - 500) * 0.5, z: 0});
+                    }
+                }
+            }
+            if (points.length === 0) points.push({x:0,y:0,z:0});
+            return points;
+        }
+
+        function getRodPoints(length, radius) {
+            const pts = [];
+            const segments = 50;
+            const rings = 20;
+            for(let i=0; i<CONFIG.particleCount; i++) {
+                const r = Math.random();
+                let x, y, z;
+                if (r < 0.8) {
+                    const seg = Math.floor(Math.random() * segments);
+                    const ring = Math.floor(Math.random() * rings);
+                    const angle = (ring / rings) * Math.PI * 2;
+                    x = (seg / segments - 0.5) * length * 2;
+                    y = Math.cos(angle) * radius;
+                    z = Math.sin(angle) * radius;
+                } else if (r < 0.95) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const rad = Math.sqrt(Math.random()) * radius;
+                    x = (Math.random() > 0.5 ? 1 : -1) * length;
+                    y = Math.cos(angle) * rad;
+                    z = Math.sin(angle) * rad;
+                } else {
+                    x = (Math.random() - 0.5) * length * 2;
+                    const angle = Math.random() * Math.PI * 2;
+                    const rad = Math.random() * radius;
+                    y = Math.cos(angle) * rad;
+                    z = Math.sin(angle) * rad;
+                }
+                pts.push({x, y, z});
+            }
+            return pts;
+        }
+
+        function getSpherePoints(radius) {
+            const pts = [];
+            const lats = 24; 
+            const longs = 36; 
+            for(let i=0; i<CONFIG.particleCount; i++) {
+                const r = Math.random();
+                let x, y, z;
+                if (r < 0.7) {
+                    if (Math.random() > 0.5) {
+                        const latIdx = Math.floor(Math.random() * lats);
+                        const phi = (latIdx / lats) * Math.PI; 
+                        const theta = Math.random() * Math.PI * 2;
+                        x = radius * Math.sin(phi) * Math.cos(theta);
+                        y = radius * Math.sin(phi) * Math.sin(theta);
+                        z = radius * Math.cos(phi);
+                    } else {
+                        const longIdx = Math.floor(Math.random() * longs);
+                        const theta = (longIdx / longs) * Math.PI * 2;
+                        const phi = Math.random() * Math.PI;
+                        x = radius * Math.sin(phi) * Math.cos(theta);
+                        y = radius * Math.sin(phi) * Math.sin(theta);
+                        z = radius * Math.cos(phi);
+                    }
+                } else {
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.acos(Math.random() * 2 - 1);
+                    const rad = Math.cbrt(Math.random()) * radius;
+                    x = rad * Math.sin(phi) * Math.cos(theta);
+                    y = rad * Math.sin(phi) * Math.sin(theta);
+                    z = rad * Math.cos(phi);
+                }
+                pts.push({x, y, z});
+            }
+            return pts;
+        }
+
+        function getCylinderPoints(radius, height) {
+            const pts = [];
+            const rings = 15;
+            for(let i=0; i<CONFIG.particleCount; i++) {
+                const r = Math.random();
+                let x, y, z;
+                if (r < 0.6) {
+                    const ringIdx = Math.floor(Math.random() * rings) + 1;
+                    const rad = (ringIdx / rings) * radius;
+                    const angle = Math.random() * Math.PI * 2;
+                    const isTop = Math.random() > 0.5;
+                    x = Math.cos(angle) * rad;
+                    y = isTop ? height : -height;
+                    z = Math.sin(angle) * rad;
+                } else if (r < 0.8) {
+                    const angleIdx = Math.floor(Math.random() * 40);
+                    const angle = (angleIdx / 40) * Math.PI * 2;
+                    x = Math.cos(angle) * radius;
+                    y = (Math.random() - 0.5) * height * 2;
+                    z = Math.sin(angle) * radius;
+                } else {
+                    const angle = Math.random() * Math.PI * 2;
+                    const rad = Math.sqrt(Math.random()) * radius;
+                    x = Math.cos(angle) * rad;
+                    y = (Math.random() - 0.5) * height * 2;
+                    z = Math.sin(angle) * rad;
+                }
+                pts.push({x, y, z});
+            }
+            return pts;
+        }
+
+        function getCubePoints(size) {
+            const pts = [];
+            const half = size / 2;
+            const grid = 10;
+            for(let i=0; i<CONFIG.particleCount; i++) {
+                const r = Math.random();
+                let x, y, z;
+                if (r < 0.3) {
+                    const axis = Math.floor(Math.random() * 3);
+                    const s1 = Math.random() > 0.5 ? 1 : -1;
+                    const s2 = Math.random() > 0.5 ? 1 : -1;
+                    const val = (Math.random() - 0.5) * size;
+                    if (axis===0) { x=val; y=s1*half; z=s2*half; }
+                    else if (axis===1) { x=s1*half; y=val; z=s2*half; }
+                    else { x=s1*half; y=s2*half; z=val; }
+                } else if (r < 0.9) {
+                    const face = Math.floor(Math.random() * 3);
+                    const side = Math.random() > 0.5 ? 1 : -1;
+                    const u = (Math.floor(Math.random() * grid) / grid - 0.5) * size;
+                    const v = (Math.floor(Math.random() * grid) / grid - 0.5) * size;
+                    if (face===0) { x=side*half; y=u; z=v; }
+                    else if (face===1) { x=u; y=side*half; z=v; }
+                    else { x=u; y=v; z=side*half; }
+                } else {
+                    x = (Math.random() - 0.5) * size;
+                    y = (Math.random() - 0.5) * size;
+                    z = (Math.random() - 0.5) * size;
+                }
+                pts.push({x, y, z});
+            }
+            return pts;
+        }
+
+        function toggleTeacherMode() {
+            teacherMode = document.getElementById('teacher-mode-toggle').checked;
+            document.getElementById('teacher-controls').style.display = teacherMode ? 'block' : 'none';
+            if(teacherMode) {
+                document.getElementById('radius-slider').value = currentScale;
+            }
+        }
+
+        function resetExperiment() {
+            currentScale = CONFIG.baseScale;
+            massFactor = 1.0;
+            updateTargetShape('text', 'SYSTEM');
+            setTimeout(() => {
+                setMode('rod');
+            }, 1000);
+            document.getElementById('radius-slider').value = 1.0;
+            document.getElementById('mass-slider').value = 1.0;
+            if (controls) controls.reset(); // 重置相机
+        }
+
+        function toggleWhy() {
+            const modal = document.getElementById('principle-modal');
+            const content = document.getElementById('principle-content');
+            const shapeData = KNOWLEDGE[currentShapeType] || KNOWLEDGE['rod'];
+            content.innerHTML = `
+                <h3 style="color:#ffff00">${shapeData.title} 详细推导</h3>
+                <p>${shapeData.why}</p>
+                ${shapeData.derivation}
+            `;
+            modal.style.display = 'flex';
+        }
+
+        function showScenario() {
+            const modal = document.getElementById('scenario-modal');
+            const content = document.getElementById('scenario-content');
+            const shapeData = KNOWLEDGE[currentShapeType] || KNOWLEDGE['rod'];
+            
+            const svgHtml = shapeData.svg || '<p>暂无示意图</p>';
+            
+            content.innerHTML = `
+                <h3 style="color:var(--primary-color)">${shapeData.app}</h3>
+                <div class="scenario-svg-container">
+                    ${svgHtml}
+                </div>
+                <p style="margin-top:10px; color:#aaa;">${shapeData.insight}</p>
+            `;
+            modal.style.display = 'flex';
+        }
+
+        function speakInsight() {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const shapeData = KNOWLEDGE[currentShapeType] || KNOWLEDGE['rod'];
+                const text = els.insight.innerText + "。" + shapeData.why;
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'zh-CN';
+                utterance.rate = 1.2;
+                window.speechSynthesis.speak(utterance);
+            } else {
+                alert("浏览器不支持语音。");
+            }
+        }
+
+        function toggleSummary(show) {
+            document.getElementById('summary-modal').style.display = show ? 'flex' : 'none';
+            if (show) {
+                updateProgress(3);
+                renderQuiz();
+            }
+        }
+
+        function renderQuiz() {
+            const container = document.getElementById('quiz-container');
+            container.innerHTML = '';
+            QUIZ.forEach((item, index) => {
+                const div = document.createElement('div');
+                div.className = 'quiz-question-box';
+                div.innerHTML = `<p style="margin:10px 0; color:#fff;">${item.q}</p>`;
+                
+                const optionsDiv = document.createElement('div');
+                item.options.forEach((opt, optIndex) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'quiz-option';
+                    btn.innerText = opt;
+                    btn.onclick = () => checkAnswer(btn, index, optIndex, div);
+                    optionsDiv.appendChild(btn);
+                });
+                div.appendChild(optionsDiv);
+
+                const expDiv = document.createElement('div');
+                expDiv.className = 'quiz-explanation';
+                expDiv.innerHTML = item.explanation;
+                expDiv.id = `explanation-${index}`;
+                div.appendChild(expDiv);
+
+                container.appendChild(div);
+            });
+        }
+
+        function checkAnswer(btn, qIndex, optIndex, parentDiv) {
+            const correctIndex = QUIZ[qIndex].ans;
+            const isCorrect = correctIndex === optIndex;
+            const buttons = parentDiv.querySelectorAll('button');
+            const expDiv = document.getElementById(`explanation-${qIndex}`);
+
+            buttons.forEach((b, idx) => {
+                b.disabled = true;
+                if (idx === correctIndex) {
+                    b.classList.add('correct');
+                    b.innerHTML += " ✅";
+                } else if (idx === optIndex && !isCorrect) {
+                    b.classList.add('wrong');
+                    b.innerHTML += " ❌";
+                }
+            });
+
+            expDiv.style.display = 'block';
+        }
+
+        function setMode(key) {
+            if (!KNOWLEDGE[key]) return;
+            const data = KNOWLEDGE[key];
+            els.mode.innerText = "MODE: " + data.title;
+            els.formula.innerHTML = data.formula;
+            els.insight.innerText = data.insight;
+            els.app.innerText = data.app;
+            updateTargetShape(key);
+            checkTask(key);
+        }
+
+        function startTask(index) {
+            currentTask = index;
+            els.taskPanel.style.display = 'block';
+            els.taskFeedback.innerText = "";
+            els.taskPanel.classList.remove('task-success');
+            if (index === 0) {
+                els.taskDesc.innerText = "任务1：寻找最易转动的形状（实心球），并将其放大，观察角速度变化。";
+            } else if (index === 1) {
+                els.taskDesc.innerText = "任务2：切换到【立方体】，使其缩小到最小，获得最大动能。";
+            } else {
+                els.taskPanel.style.display = 'none';
+            }
+        }
+
+        function checkTask(currentKey) {
+            if (!appStarted) return;
+            if (currentTask === 0) {
+                if (currentKey === 'sphere' && currentScale > 1.1) {
+                    completeTask("✅ 任务完成！半径增大 -> 惯量增大 -> 速度减慢。");
+                    setTimeout(() => startTask(1), 3000);
+                }
+            } else if (currentTask === 1) {
+                if (currentKey === 'cube' && currentScale < 0.8) {
+                    completeTask("✅ 任务完成！体积压缩 -> 惯量极小 -> 极速旋转！");
+                    setTimeout(() => {
+                        els.taskPanel.style.display = 'none';
+                        updateProgress(3);
+                    }, 3000);
+                }
+            }
+        }
+
+        function completeTask(msg) {
+            els.taskFeedback.innerText = msg;
+            els.taskPanel.classList.add('task-success');
+        }
+
+        function updateProgress(step) {
+            const steps = [1, 2, 3];
+            steps.forEach(s => {
+                const el = document.getElementById(`step-${s}`);
+                if (s <= step) {
+                    el.classList.add('active');
+                } else {
+                    el.classList.remove('active');
+                }
+            });
+            els.progressFill.style.width = ((step-0.5)/3 * 100) + "%";
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if(e.key === '1') setMode('rod');
+            if(e.key === '2') setMode('sphere');
+            if(e.key === '3') setMode('disc');
+            if(e.key === '4') setMode('cube');
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            time += 0.01;
+            const delta = clock.getDelta();
+            document.getElementById('fps').innerText = Math.round(1 / (delta || 0.01));
+            
+            // 新增：更新控制器状态（用于阻尼效果）
+            if (controls) controls.update(); 
+
+            if (axisMesh) {
+                axisMesh.visible = currentShapeType !== 'text';
+                axisMesh.material.opacity = 0.5 + Math.sin(time * 3) * 0.2;
+            }
+            
+            if (teacherMode) {
+                targetScale = parseFloat(document.getElementById('radius-slider').value);
+                massFactor = parseFloat(document.getElementById('mass-slider').value);
+            } 
+            
+            currentScale += (targetScale - currentScale) * 0.1;
+            currentInertiaFactor = massFactor * (currentScale * currentScale);
+            
+            const baseW = (currentShapeType === 'text') ? 0.0 : 0.03; 
+            currentRotSpeed = baseW / Math.max(0.1, currentInertiaFactor);
+            
+            const velVal = (currentRotSpeed * 100).toFixed(1);
+            const engVal = Math.round(0.5 * currentInertiaFactor * (currentRotSpeed * 100)**2);
+            
+            els.velVal.innerText = velVal;
+            els.engVal.innerText = engVal;
+
+            velocityHistory.push(currentRotSpeed * 100); velocityHistory.shift();
+            energyHistory.push(engVal); energyHistory.shift(); 
+            drawChart(vChartCtx, velocityHistory, 8, '#00ffcc');
+            drawChart(eChartCtx, energyHistory, 800, '#ff0055'); 
+
+            if (currentTask !== -1) checkTask(currentShapeType);
+
+            shapeRotation += currentRotSpeed;
+            const cosT = Math.cos(shapeRotation);
+            const sinT = Math.sin(shapeRotation);
+            const tilt = CONFIG.tiltAngle;
+            const cosTilt = Math.cos(tilt); const sinTilt = Math.sin(tilt);
+            
+            const speedColorMult = Math.min(1.0, currentRotSpeed / 0.05);
+            
+            const pArray = particleGeo.attributes.position.array;
+            const cArray = particleGeo.attributes.color.array;
+
+            for (let i = 0; i < CONFIG.particleCount; i++) {
+                const ix = i * 3;
+                let bx = baseTargetPositions[ix] * currentScale;
+                let by = baseTargetPositions[ix+1] * currentScale;
+                let bz = baseTargetPositions[ix+2] * currentScale;
+
+                let rx = bx * cosT - bz * sinT;
+                let rz = bx * sinT + bz * cosT;
+                let ry = by;
+
+                let ryFinal = ry * cosTilt - rz * sinTilt;
+                let rzFinal = ry * sinTilt + rz * cosTilt;
+
+                pArray[ix] += (rx - pArray[ix]) * CONFIG.returnSpeed;
+                pArray[ix+1] += (ryFinal - pArray[ix+1]) * CONFIG.returnSpeed;
+                pArray[ix+2] += (rzFinal - pArray[ix+2]) * CONFIG.returnSpeed;
+
+                cArray[ix] = baseColor.r + speedColorMult * 0.5;
+                cArray[ix+1] = baseColor.g - speedColorMult * 0.3;
+                cArray[ix+2] = baseColor.b - speedColorMult * 0.3;
+            }
+
+            particleGeo.attributes.position.needsUpdate = true;
+            particleGeo.attributes.color.needsUpdate = true;
+            renderer.render(scene, camera);
+        }
+
+        function drawChart(ctx, data, maxVal, color) {
+            const w = 190; const h = 70;
+            ctx.clearRect(0, 0, w, h);
+            ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+            const step = w / (data.length - 1);
+            for(let i=0; i<data.length; i++) {
+                let val = data[i];
+                const effectiveMax = Math.max(maxVal, ...data, 1); 
+                let y = h - (val / effectiveMax) * h * 0.9;
+                if(y>h) y=h; if(y<0) y=0;
+                if(i===0) ctx.moveTo(0, y); else ctx.lineTo(i*step, y);
+            }
+            ctx.stroke();
+        }
+
+        let leftHand = null;
+        let rightHand = null;
+
+        function onResults(results) {
+            if (!appStarted) return;
+
+            leftHand = null; rightHand = null;
+            if (results.multiHandLandmarks && results.multiHandedness) {
+                els.handStatus.innerText = "TRACKING";
+                els.handStatus.className = "";
+                els.handStatus.style.color = "#00ffcc";
+
+                for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                    const label = results.multiHandedness[i].label;
+                    const landmarks = results.multiHandLandmarks[i];
+                    if (label === 'Left') leftHand = landmarks;
+                    if (label === 'Right') rightHand = landmarks;
+                }
+                const temp = leftHand; leftHand = rightHand; rightHand = temp; 
+            } else {
+                els.handStatus.innerText = "NO HAND";
+                els.handStatus.className = "warning";
+            }
+
+            if (!teacherMode) {
+                if (leftHand) {
+                    const fingers = countFingers(leftHand);
+                    if (fingers === 1) setMode('rod');
+                    else if (fingers === 2) setMode('sphere');
+                    else if (fingers === 3) setMode('disc');
+                    else if (fingers === 4) setMode('cube');
+                }
+                if (rightHand) {
+                    const fingersR = countFingers(rightHand);
+                    if (fingersR >= 4) targetScale = CONFIG.maxScale;
+                    else if (fingersR <= 1) targetScale = 0.5;
+                    else targetScale = CONFIG.baseScale;
+                }
+            }
+        }
+
+        function countFingers(lm) {
+            let count = 0;
+            if (lm[8].y < lm[6].y) count++;
+            if (lm[12].y < lm[10].y) count++;
+            if (lm[16].y < lm[14].y) count++;
+            if (lm[20].y < lm[18].y) count++;
+            return count;
+        }
+
+        const videoElement = document.getElementsByClassName('input_video')[0];
+        const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+        hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults(onResults);
+
+        const cameraFeed = new Camera(videoElement, {
+            onFrame: async () => { await hands.send({image: videoElement}); },
+            width: 640, height: 480
+        });
+
+        initThree();
+        cameraFeed.start();
+        animate();
+
+    </script>
+</body>
+</html>
